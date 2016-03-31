@@ -10,8 +10,8 @@ def main(argv):
     parser.add_argument('password', help='Your password')
     parser.add_argument('-s', '--sequential', dest='sequential', 
             action='store_true', help='Run sequentially')
-    parser.add_argument('-t', '--threads', dest='threads', type=int, default=8,
-            help='Number of threads to use (default: 8)')
+    parser.add_argument('-t', '--threads', dest='threads', type=int, default=20,
+            help='Number of threads to use (default: 20)')
     parser.add_argument('-d', '--destination', dest='destination',
             help='Where to output the downloaded files')
     parser.add_argument('-m', '--max-size', dest='max_size',
@@ -46,8 +46,6 @@ def main(argv):
             force=args.force)
 
     bob.start()
-    
-    bob.download_files()
 
 
 if __name__ == "__main__":

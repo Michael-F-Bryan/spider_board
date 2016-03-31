@@ -10,7 +10,7 @@ import logging
 import os
 from collections import namedtuple
 from queue import Queue, Empty
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 
 LOG_FILE = os.path.abspath('scraper_log.log')
@@ -133,12 +133,8 @@ class Browser:
         self.sections = Queue()
         self.documents = Queue()
 
-        if seq:
-            self.start = self.start_sequential
-        else:
-            self.start = self.start_concurrent
-            self.thread_pool = ThreadPoolExecutor(max_workers=threads)
-            self.futures = []
+        self.sequential = seq
+        self.threads = threads
 
         self.download_sizes = []
 
@@ -231,6 +227,8 @@ class Browser:
         # Being scraped
         self.sections.task_done()
 
+        return folders
+
     def _folders_in_section(self, soup, section):
         """
         Find all the nested folders in this section.
@@ -278,7 +276,7 @@ class Browser:
                 file_list.append(new_attachment)
         return file_list
 
-    def start_sequential(self):
+    def spider_sequential(self):
         self.login()
         self.get_units()
 
@@ -298,8 +296,7 @@ class Browser:
         save_location = os.path.join(self.download_dir, document.filename)
         parent_dir = os.path.dirname(save_location)
 
-        # Check if the user wants to overwrite existing documents
-        if not self.force:
+        if self._already_downloaded(save_location):
             logger.info('Skipping file: {}'.format(save_location))
             return
 
@@ -324,9 +321,18 @@ class Browser:
         if not ext:
             content_mimetype = r.headers['Content-Type']
             extension = mimetypes.guess_extension(content_mimetype)
+
+            # In the face of ambiguity, refuse the temptation to guess
+            if extension in ['.so', '.dll', '.exe', '.m', '.a']:
+                extension = ''
+
             save_location = save_location + extension
             logger.warn('Guessed file extension "{}" for file: {}'.format(
                 extension, save_location))
+
+        if self._already_downloaded(save_location):
+            logger.info('Skipping file: {}'.format(save_location))
+            return
 
         if int(r.headers['content-length']) > self.max_size:
             logger.warn('File too big: {}'.format(document))
@@ -339,7 +345,17 @@ class Browser:
                 if chunk: # filter out keep-alive new chunks
                     f.write(chunk)
 
-        self.download_sizes.append(int(content_headers['content-length']))
+        self.download_sizes.append(int(r.headers['content-length']))
+
+    def _already_downloaded(self, save_location):
+        # Check if the user wants to overwrite existing documents
+        if os.path.exists(save_location):
+            if self.force:
+                return False
+            else:
+                return True
+        else:
+            return False
 
     def read_headers(self, document):
         r = requests.head(document.url,
@@ -347,7 +363,7 @@ class Browser:
 
         return r.headers
 
-    def download_files(self):
+    def download_files_sequential(self):
         logger.info('Now downloading files')
         
         while not self.documents.empty():
@@ -362,7 +378,7 @@ class Browser:
 
         logger.info('{} bytes downloaded'.format(sum(self.download_sizes)))
 
-    def start_concurrent(self):
+    def spider_concurrent(self):
         self.login()
         self.get_units()
 
@@ -370,13 +386,11 @@ class Browser:
         for unit in self.units:
             if '[' not in unit.name:
                 fut = self.thread_pool.submit(self._scrape_unit, unit)
-                fut.add_done_callback(self._queue_next_job)
-
                 self.futures.append(fut)
 
+        # Wait so that we have some sections in the queue initially
         wait(self.futures)
 
-    def _queue_next_job(self, calling_future=None):
         while not self.sections.empty():
             section = self.sections.get()
 
@@ -384,10 +398,71 @@ class Browser:
             # Future to a list 
             fut = self.thread_pool.submit(self._scrape_section, section)
 
-            # Attach this callback to each future
-            fut.add_done_callback(self._queue_next_job)
+            callback = lambda future: self._requeue(self._scrape_section, future)
+            fut.add_done_callback(callback)
 
             self.futures.append(fut)
+
+        self.sections.join()
+        logger.info('{} files found'.format(self.documents.qsize()))
+
+    def download_concurrent(self):
+        logger.info('Now downloading the files')
+
+        while not self.documents.empty():
+            new_document = self.documents.get()
+            fut = self.thread_pool.submit(self._download, new_document)
+
+            callback = lambda future: self._requeue(self._download, future)
+            fut.add_done_callback(callback)
+
+            self.futures.append(fut)
+
+
+    def _requeue(self, func, fut):
+        """
+        This function will iterate over the future's return value, submitting
+        a new job to the thread pool with the value as it's only argument.
+        Then it attaches a callback so that once *that* job is done, it'll do
+        the same again until all the tasks are complete.
+        
+        In order to set it as a callback you need to do a small hack using 
+        lambda functions. Initial use when queueing the function you want to
+        be repeated::
+
+            fut = self.thread_pool.submit(function_to_call_again, section)
+
+            callback = lambda future: self._requeue(function_to_call_again, future)
+            fut.add_done_callback(callback)
+
+            self.futures.append(fut)
+        """
+        sections = fut.result()
+
+        if not sections:
+            return
+
+        for section in sections:
+            new_future = self.thread_pool.submit(func, section)
+
+            callback = lambda future: self._requeue(func, future)
+            new_future.add_done_callback(callback)
+
+            self.futures.append(new_future)
+
+    def start(self):
+        if self.sequential:
+            self.spider_sequential()
+            self.download_files_sequential()
+        else:
+            self.thread_pool = ThreadPoolExecutor(max_workers=self.threads)
+            self.futures = []
+
+            self.spider_concurrent()
+            self.download_concurrent()
+
+            wait(self.futures)
+            logger.info('{} bytes downloaded'.format(sum(self.download_sizes)))
 
     def quit(self):
         self.thread_pool.shutdown()
