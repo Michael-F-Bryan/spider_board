@@ -6,13 +6,15 @@ def main():
     password = 'Popcorn37'
 
     bob = spider_board.Browser(username, password)
-    bob.login()
-    bob.get_units()
+    bob.start()
 
-    a_unit = bob.units[0]
-    bob.find_documents(a_unit)
+    # bob.login()
+    # bob.get_units()
 
-    print(len(a_unit.documents))
+    # a_unit = bob.units[0]
+    # bob.find_documents(a_unit)
+
+    # print(a_unit.documents.qsize())
 
 
 if __name__ == "__main__":
