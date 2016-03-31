@@ -12,26 +12,16 @@ from collections import namedtuple
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
+from .utils import time_job, LOG_FILE, get_logger, humansize
 
-LOG_FILE = os.path.abspath('scraper_log.log')
+
 
 # Create the logging handlers and attach them
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, LOG_FILE)
 
 stream_handler = logging.StreamHandler()
-
-file_handler = logging.FileHandler(LOG_FILE)
-formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s: %(message)s",
-        datefmt='%Y/%m/%d %I:%M:%S %p')
-
-file_handler.setFormatter(formatter)
-stream_handler.setFormatter(formatter)
-
-logger.addHandler(file_handler)
+stream_handler.setLevel(logging.INFO)
 logger.addHandler(stream_handler)
-
-logger.setLevel(logging.DEBUG)
 
 
 class Attachment:
@@ -114,8 +104,11 @@ class Browser:
             ]
 
     def __init__(self, username, password, download_dir, blackboard_url=None, 
-            threads=8, seq=False, max_size=10*1024*1024, force=False):
-        logger.info('Initiating')
+            threads=8, seq=False, max_size=10, force=False):
+        message = '  Initiating   '
+        logger.info('='*len(message))
+        logger.info(message)
+        logger.info('='*len(message))
 
         self.blackboard_url = blackboard_url or 'https://lms.curtin.edu.au/'
         self.login_url = self.blackboard_url + 'webapps/login/'
@@ -123,7 +116,7 @@ class Browser:
         self.username = username
         self.password = base64.b64encode(password.encode('utf-8')) 
         self.download_dir = os.path.abspath(download_dir)
-        self.max_size = max_size # Maximum download size in bytes
+        self.max_size = max_size*1024*1024 # Maximum download size in bytes
         self.force = force
 
         self.session = self.b = requests.session() 
@@ -327,16 +320,17 @@ class Browser:
                 extension = ''
 
             save_location = save_location + extension
-            logger.warn('Guessed file extension "{}" for file: {}'.format(
+            logger.debug('Guessed file extension "{}" for file: {}'.format(
                 extension, save_location))
 
         if self._already_downloaded(save_location):
             logger.info('Skipping file: {}'.format(save_location))
             return
 
-        if int(r.headers['content-length']) > self.max_size:
+        file_size = int(r.headers['content-length'])
+        if file_size > self.max_size:
             logger.warn('File too big: {}'.format(document))
-            logger.warn('Size: {}'.format(r.headers['content-length']))
+            logger.warn('Size: {}'.format(humansize(file_size)))
             logger.warn('Proposed save location: {}'.format(save_location))
             return
 
@@ -450,6 +444,7 @@ class Browser:
 
             self.futures.append(new_future)
 
+    @time_job()
     def start(self):
         if self.sequential:
             self.spider_sequential()
@@ -462,9 +457,12 @@ class Browser:
             self.download_concurrent()
 
             wait(self.futures)
-            logger.info('{} bytes downloaded'.format(sum(self.download_sizes)))
+
+        bytes_downloaded = sum(self.download_sizes)
+        logger.info('{} bytes downloaded'.format(humansize(bytes_downloaded)))
 
     def quit(self):
+        logger.info('Shutting down thread pool and exiting...')
         self.thread_pool.shutdown()
         sys.exit(1)
 

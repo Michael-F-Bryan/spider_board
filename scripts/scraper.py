@@ -15,9 +15,11 @@ def main(argv):
     parser.add_argument('-d', '--destination', dest='destination',
             help='Where to output the downloaded files')
     parser.add_argument('-m', '--max-size', dest='max_size',
-            help='The maximum download size in bytes (default: 10MB)')
+            help='The maximum download size in megabytes (default: 10MB)')
     parser.add_argument('-f', '--force', dest='force', action='store_true',
             help='Overwrite files if they already exist (default: False)')
+    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
+            help='Enable verbose output')
 
     args = parser.parse_args(argv)
 
@@ -34,6 +36,9 @@ def main(argv):
     else:
         download_dir = os.path.expanduser('~/Downloads/Blackboard/')
 
+    if args.verbose:
+        import logging
+        spider_board.logger.setLevel(logging.DEBUG)
 
     print('Downloading files to {}'.format(os.path.abspath(download_dir)))
 
