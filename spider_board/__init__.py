@@ -8,8 +8,7 @@ from bs4 import BeautifulSoup
 import logging
 import os
 from collections import namedtuple
-from queue import Queue 
-from asyncio import QueueEmpty
+from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor, wait
 
 
@@ -94,8 +93,6 @@ class Unit:
         self.code = code
         self.url = url.strip()
         self.name = name
-        self.sections = Queue()
-        self.documents = Queue()
 
     def __repr__(self):
         return '<Unit: name="{}">'.format(self.name)
@@ -104,6 +101,7 @@ class Unit:
 class Browser:
     SKIP_FOLDERS = [
             'Discussion Board',
+            'Help for students',
             'Contacts',
             'Tools',
             'iPortfolio',
@@ -113,7 +111,8 @@ class Browser:
             'Help for Students',
             ]
 
-    def __init__(self, username, password, blackboard_url=None, threads=8):
+    def __init__(self, username, password, blackboard_url=None, threads=8, 
+            seq=False):
         logger.info('Initiating')
 
         self.blackboard_url = blackboard_url or 'https://lms.curtin.edu.au/'
@@ -124,8 +123,16 @@ class Browser:
         self.b = requests.session() 
         self.units = []
 
-        self.thread_pool = ThreadPoolExecutor(max_workers=threads)
-        self.futures = []
+        # The two "task" queues
+        self.sections = Queue()
+        self.documents = Queue()
+
+        if seq:
+            self.start = self.start_sequential
+        else:
+            self.start = self.start_concurrent
+            self.thread_pool = ThreadPoolExecutor(max_workers=threads)
+            self.futures = []
 
     def login(self):
         logger.info('Logging in')
@@ -192,7 +199,7 @@ class Browser:
             link = urljoin(self.blackboard_url, link['href'])
             new_section = Section(unit, title, link)
             logger.debug('Adding section: {}'.format(new_section))
-            unit.sections.put(new_section)
+            self.sections.put(new_section)
 
     def _scrape_section(self, section):
         logger.info('Scraping section: {}'.format(section))
@@ -201,33 +208,37 @@ class Browser:
         soup = BeautifulSoup(r.text, 'html.parser')
 
         folders = self._folders_in_section(soup, section)
-        logger.debug('{} folders found for this section: {}'.format(len(folders, 
-                                                                  section)))
-
+        logger.debug('{} folders found for this section: {}'.format(len(folders),
+                                                                  section))
         for folder in folders:
-            section.unit.sections.put(f)
+            self.sections.put(folder)
 
         files = self._files_in_section(soup, section)
-        logger.debug('{} files found for this section: {}'.format(len(files, 
-                                                                  section)))
-
+        logger.debug('{} files found for this section: {}'.format(len(files), 
+                                                                  section))
         for f in files:
-            section.unit.documents.put(f)
+            self.documents.put(f)
             
-        # Find any folders that may be in this one
-        items = container.find_all(class_='item')
-
         # Call task_done() to notify the queue that a section has finished
         # Being scraped
         self.sections.task_done()
 
     def _folders_in_section(self, soup, section):
+        """
+        Find all the nested folders in this section.
+        """
         # This is a really dodgy way to do it. Not really any other option
         # Though because Blackboard's html isn't easy to work with
         magic_folder_link_contains = '/webapps/blackboard/content/listContent.jsp?' 
+        content = soup.find(id='content')
+
+        if content is None:
+            print(section.url)
+            import pdb
+            pdb.set_trace()
 
         found_sections = []
-        for link in soup.find_all('a'):
+        for link in content.find_all('a'):
             if magic_folder_link_contains in link['href']:
                 unit = section.unit
                 title = link.text.strip()
@@ -240,15 +251,10 @@ class Browser:
 
         return found_sections
 
-
     def _files_in_section(self, soup, section):
-        container = soup.find(id='containerdiv')
-
-        files = container.find_all(alt='File')
-
         # Check if there are any documents in this folder
         # (All attached files are in a list with the "attachments" class
-        attached_files = container.find_all(class_='attachments')
+        attached_files = soup.find_all(class_='attachments')
 
         file_list = []
         for attachment_list in attached_files:
@@ -260,37 +266,48 @@ class Browser:
                 new_attachment = Attachment(title, url, section)
 
                 logger.debug('File discovered: {}'.format(new_attachment))
-                print(new_attachment.filename)
 
                 file_list.append(new_attachment)
-
         return file_list
 
-    def find_documents(self, unit):
-        # Get the initial folders to check
-        self._scrape_unit(unit)
-
-        while not unit.sections.empty():
-            try:
-                # use get_nowait() to guard against any race conditions
-                section = unit.sections.get_nowait()
-            except QueueEmpty:
-                pass
-
-            # Tell the thread pool to scrape that section then add the
-            # Future to a list (should be threadsafe because of GIL)
-            fut = self.thread_pool.submit(self._scrape_section, section)
-            self.futures.append(fut)
-
-    def start(self):
+    def start_sequential(self):
         self.login()
         self.get_units()
 
         for unit in self.units:
             if '[' not in unit.name:
-                self.find_documents(unit)
+                self._scrape_unit(unit)
+
+        while not self.sections.empty():
+            next_section = self.sections.get()
+            self._scrape_section(next_section)
+
+    def start_concurrent(self):
+        self.login()
+        self.get_units()
+
+        # Do the initial scrapes for each unit
+        for unit in self.units:
+            if '[' not in unit.name:
+                fut = self.thread_pool.submit(self._scrape_unit, unit)
+                fut.add_done_callback(self._queue_next_job)
+
+                self.futures.append(fut)
 
         wait(self.futures)
+
+    def _queue_next_job(self, calling_future=None):
+        while not self.sections.empty():
+            section = self.sections.get()
+
+            # Tell the thread pool to scrape that section then add the
+            # Future to a list 
+            fut = self.thread_pool.submit(self._scrape_section, section)
+
+            # Attach this callback to each future
+            fut.add_done_callback(self._queue_next_job)
+
+            self.futures.append(fut)
 
     def quit(self):
         self.thread_pool.shutdown()
