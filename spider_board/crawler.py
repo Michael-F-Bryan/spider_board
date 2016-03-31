@@ -29,14 +29,14 @@ logger.addHandler(stream_handler)
 logger.setLevel(logging.DEBUG)
 
 
-Section = namedtuple('Section', ['unit_code', 'title', 'url'])
+Attachment = namedtuple('Attachment', ['title', 'url'])
+
 
 class Section:
-    def __init__(self, unit_code, title, url):
-        self.unit_code = unit_code
+    def __init__(self, unit, title, url):
+        self.unit = unit
         self.title = title
         self.url = url
-        self.scraped = False
 
     def __repr__(self):
         return '<Section: {}>'.format(self.title)
@@ -46,7 +46,7 @@ class Unit:
         self.code = code
         self.url = url.strip()
         self.name = name
-        self.folders = []
+        self.sections = []
         self.documents = []
 
     def __repr__(self):
@@ -134,9 +134,49 @@ class Browser:
             if title in Browser.SKIP_FOLDERS:
                 continue
 
-            new_section = Section(unit.code, title, link['href'])
+            # Skip ilectures
+            if 'echo' in title.lower():
+                continue
+
+            link = urljoin(self.blackboard_url, link['href'])
+            new_section = Section(unit, title, link)
             logger.debug('Adding section: {}'.format(new_section))
-            unit.folders.append(new_section)
+            unit.sections.append(new_section)
+
+    def _scrape_section(self, section):
+        logger.info('Scraping section: {}'.format(section))
+
+        r = self.b.get(section.url)
+        soup = BeautifulSoup(r.text, 'html.parser')
+
+        container = soup.find(id='containerdiv')
+
+        files = container.find_all(alt='File')
+
+        # Check if there are any documents in this folder
+        attached_files = container.find_all(class_='attachments')
+        for attachment_list in attached_files:
+            attachments = attachment_list.find_all('a')
+
+            for attachment in attachments:
+                url = urljoin(self.blackboard_url, attachment['href'])
+                title = attachment.text.strip()
+                new_attachment = Attachment(title, url)
+
+                logger.debug('File discovered: {}'.format(title))
+                section.unit.documents.append(new_attachment)
+
+        # Find any folders that may be in this one
+        items = container.find_all(class_='item')
+
+    def find_documents(self, unit):
+        # Get the initial folders to check
+        self._scrape_unit(unit)
+
+        while unit.sections:
+            section = unit.sections.pop()
+            self._scrape_section(section)
+
 
     def quit(self):
         sys.exit(1)

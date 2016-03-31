@@ -8,7 +8,11 @@ def main():
     bob = spider_board.Browser(username, password)
     bob.login()
     bob.get_units()
-    bob._scrape_unit(bob.units[0])
+
+    a_unit = bob.units[0]
+    bob.find_documents(a_unit)
+
+    print(len(a_unit.documents))
 
 
 if __name__ == "__main__":
