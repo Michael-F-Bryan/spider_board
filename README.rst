@@ -28,7 +28,7 @@ Then run the setup script (may need admin privileges)::
 
 Then finally run the application::
 
-    python3 scripts/scraper.py [your_student_number] [your_password]
+    spider_board [your_student_number] [your_password]
 
 Help!!
 ------
@@ -36,8 +36,13 @@ Help!!
 If you want to see what options are available then use the "-h" switch on the
 scraper.py script::
 
-    python3 scripts/scraper.py -h
+    spider_board -h
 
 If you find any bugs or want to request a particular feature then `create a 
 new issue <https://github.com/Michael-F-Bryan/spider_board/issues/new>`_.
+
+To Do
+-----
+* Create a GUI using tkinter
+* Allow you to download iLectures
 

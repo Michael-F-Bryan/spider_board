@@ -10,6 +10,11 @@ setup(name='spider_board',
           'requests',
           'bs4',
       ],
+      entry_points={
+          'console_scripts': [
+              'spider_board = spider_board.__main__:main',
+              ]
+          },
       license='MIT',
      )
 

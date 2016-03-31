@@ -4,7 +4,7 @@ import sys
 import spider_board
 
 
-def main(argv):
+def main(argv=None):
     parser = argparse.ArgumentParser(description='Download all your units '
     'from blackboard')
     parser.add_argument('username', help='Your username')
@@ -22,7 +22,7 @@ def main(argv):
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
             help='Enable verbose output')
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv or sys.argv[1:])
 
     username = args.username
     password = args.password
