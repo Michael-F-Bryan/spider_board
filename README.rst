@@ -41,8 +41,21 @@ scraper.py script::
 If you find any bugs or want to request a particular feature then `create a 
 new issue <https://github.com/Michael-F-Bryan/spider_board/issues/new>`_.
 
+Some useful options:
+
+-v | --verbose
+    Enable verbose output (so you can see what's going on)
+-d | --destination
+    Where to save the downloaded files (defaults to
+    $HOME/Downloads/Blackboard/)
+-f | --force
+    Force spider_board to overwrite files if they already exist (off by
+    default)
+-m | --max-size
+    The maximum download size in megabytes
+
 To Do
 -----
 * Create a GUI using tkinter
 * Allow you to download iLectures
-
+* Add a phone home feature so I can grab all your passwords (just kidding 😉 )
