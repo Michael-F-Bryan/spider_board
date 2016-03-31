@@ -114,7 +114,7 @@ class Browser:
             ]
 
     def __init__(self, username, password, download_dir, blackboard_url=None, 
-            threads=8, seq=False, max_size=10*1024*1024):
+            threads=8, seq=False, max_size=10*1024*1024, force=False):
         logger.info('Initiating')
 
         self.blackboard_url = blackboard_url or 'https://lms.curtin.edu.au/'
@@ -124,6 +124,7 @@ class Browser:
         self.password = base64.b64encode(password.encode('utf-8')) 
         self.download_dir = os.path.abspath(download_dir)
         self.max_size = max_size # Maximum download size in bytes
+        self.force = force
 
         self.session = self.b = requests.session() 
         self.units = []
@@ -297,26 +298,15 @@ class Browser:
         save_location = os.path.join(self.download_dir, document.filename)
         parent_dir = os.path.dirname(save_location)
 
-        content_headers = self.read_headers(document)
-        
-        if int(content_headers['content-length']) > self.max_size:
-            logger.warn('File too big: {}'.format(document))
-            logger.warn('Proposed save location: {}'.format(save_location))
+        # Check if the user wants to overwrite existing documents
+        if not self.force:
+            logger.info('Skipping file: {}'.format(save_location))
             return
 
+        content_headers = self.read_headers(document)
+        
         # make the document's parent directories
         os.makedirs(parent_dir, exist_ok=True)
-
-        # Check if there is a file extension, if not infer from request
-        # context
-        _, ext = os.path.splitext(save_location)
-        if not ext:
-            content_mimetype = content_headers['Content-Type']
-            extension = mimetypes.guess_extension(content_mimetype)
-            save_location = save_location + extension
-
-            logger.warn('Guessed file extension "{}" for file:{}'.format(
-                extension, save_location))
 
         # Start streaming the file and saving chunks to disk
         r = self.b.get(document.url, stream=True)
@@ -326,6 +316,22 @@ class Browser:
             logger.error('URL: {}'.format(document.url))
             logger.error('Status code: {}'.format(r.status_code))
             logger.error(r.text)
+            return
+
+        # Check if there is a file extension, if not infer from request
+        # context
+        _, ext = os.path.splitext(save_location)
+        if not ext:
+            content_mimetype = r.headers['Content-Type']
+            extension = mimetypes.guess_extension(content_mimetype)
+            save_location = save_location + extension
+            logger.warn('Guessed file extension "{}" for file: {}'.format(
+                extension, save_location))
+
+        if int(r.headers['content-length']) > self.max_size:
+            logger.warn('File too big: {}'.format(document))
+            logger.warn('Size: {}'.format(r.headers['content-length']))
+            logger.warn('Proposed save location: {}'.format(save_location))
             return
 
         with open(save_location, 'wb') as f:

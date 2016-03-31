@@ -16,6 +16,8 @@ def main(argv):
             help='Where to output the downloaded files')
     parser.add_argument('-m', '--max-size', dest='max_size',
             help='The maximum download size in bytes (default: 10MB)')
+    parser.add_argument('-f', '--force', dest='force', action='store_true',
+            help='Overwrite files if they already exist (default: False)')
 
     args = parser.parse_args(argv)
 
@@ -40,7 +42,8 @@ def main(argv):
             password, 
             download_dir,
             seq=run_sequentially,
-            max_size=args.max_size or 10*1024)
+            max_size=args.max_size or 10*1024*1024,
+            force=args.force)
 
     bob.start()
     
