@@ -296,8 +296,10 @@ class Browser:
 
         save_location = os.path.join(self.download_dir, document.filename)
         parent_dir = os.path.dirname(save_location)
+
+        content_headers = self.read_headers(document)
         
-        if not self.below_max_size(document):
+        if int(content_headers['content-length']) > self.max_size:
             logger.warn('File too big: {}'.format(document))
             logger.warn('Proposed save location: {}'.format(save_location))
             return
@@ -305,33 +307,31 @@ class Browser:
         # make the document's parent directories
         os.makedirs(parent_dir, exist_ok=True)
 
-        # Download the document
-        r = self.b.get(document.url)
-
         # Check if there is a file extension, if not infer from request
         # context
         _, ext = os.path.splitext(save_location)
         if not ext:
-            content_mimetype = r.headers['Content-Type']
-            extension = mimetypes.guess_extension(content_mimetype, strict=False)
+            content_mimetype = content_headers['Content-Type']
+            extension = mimetypes.guess_extension(content_mimetype)
             save_location = save_location + extension
 
             logger.warn('Guessed file extension "{}" for file:{}'.format(
-                extension.
-                save_location)
+                extension, save_location))
 
-        with open(save_location, 'wb') as fp:
-            fp.write(r.content)
+        # Start streaming the file and saving chunks to disk
+        r = self.b.get(document.url, stream=True)
+        with open(save_location, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=1024): 
+                if chunk: # filter out keep-alive new chunks
+                    f.write(chunk)
 
-        self.download_sizes.append(len(r.content))
+        self.download_sizes.append(int(content_headers['content-length']))
 
-    def below_max_size(self, document):
+    def read_headers(self, document):
         r = requests.head(document.url,
                 headers={'Accept-Encoding': 'identity'})
-        if int(r.headers['content-length']) < self.max_size:
-            return True
-        else:
-            return False
+
+        return r.headers
 
     def download_files(self):
         logger.info('Now downloading files')
@@ -344,6 +344,7 @@ class Browser:
                 logger.info('Execution halted by user')
                 logger.info('Last file to be downloaded: {}'.format(next_document))
                 logger.info('Save location: {}'.format(next_document.filename))
+                logging.info('{} bytes downloaded'.format(sum(self.download_sizes)))
                 break
 
         logging.info('{} bytes downloaded'.format(sum(self.download_sizes)))

@@ -40,7 +40,7 @@ def main(argv):
             password, 
             download_dir,
             seq=run_sequentially,
-            max_size=args.max_size or 10*1024*1024)
+            max_size=args.max_size or 10*1024)
 
     bob.start()
     
