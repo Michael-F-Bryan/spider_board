@@ -1,3 +1,4 @@
+from urllib.parse import urljoin
 import sys
 import base64
 import re
@@ -5,6 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import logging
 import os
+from collections import namedtuple
 
 LOG_FILE = os.path.abspath('scraper_log.log')
 
@@ -26,6 +28,19 @@ logger.addHandler(stream_handler)
 
 logger.setLevel(logging.DEBUG)
 
+
+Section = namedtuple('Section', ['unit_code', 'title', 'url'])
+
+
+class Unit:
+    def __init__(self, name, url):
+        self.url = url.strip()
+        self.name = name
+        self.sections = []
+
+    def __repr__(self):
+        return '<Unit: name="{}">'.format(self.name)
+        
 
 class Browser:
     def __init__(self, username, password, blackboard_url=None):
@@ -58,20 +73,29 @@ class Browser:
             self.quit()
 
     def get_units(self):
-        url = 'https://lms.curtin.edu.au/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_3_1'
+        url = self.blackboard_url + 'webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_3_1'
 
         r = self.b.get(url)
         soup = BeautifulSoup(r.text, 'html.parser')
 
+        course_links = []
         for link in soup.find_all('a'):
-            l = link.get('href')
-            course = re.search(r'\?type=Course&id=_(.*)_1&url', l)
+            href = link.get('href')
+            course = re.search(r'\?type=Course&id=_(.*)_1&url', href)
             if course is None:
                 continue
             else:
+                name = link.text
                 code = course.group(1)
-                self.units.append(code)
-                logger.debug('Unit found, code: {}'.format(code))
+                l = urljoin(self.blackboard_url, href.strip()) 
+
+                new_unit = Unit(name=name, url=l)
+                logger.debug('Unit found: {}'.format(new_unit))
+
+                self.units.append(new_unit)
+
+    def _scrape_unit(self, unit):
+        pass
 
     def quit(self):
         sys.exit(1)
