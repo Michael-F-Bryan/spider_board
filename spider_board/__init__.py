@@ -1,3 +1,4 @@
+import string
 from urllib.parse import urljoin
 import sys
 import base64
@@ -7,7 +8,8 @@ from bs4 import BeautifulSoup
 import logging
 import os
 from collections import namedtuple
-from queue import Queue
+from queue import Queue 
+from asyncio import QueueEmpty
 from concurrent.futures import ThreadPoolExecutor, wait
 
 
@@ -32,14 +34,57 @@ logger.addHandler(stream_handler)
 logger.setLevel(logging.DEBUG)
 
 
-Attachment = namedtuple('Attachment', ['title', 'url'])
+class Attachment:
+    ALLOWED_CHARS = string.ascii_letters + string.digits + '[]()_-.#$%&*+~;:='
+
+    def __init__(self, title, url, section):
+        self.title = title
+        self.url = url
+        self.data = None
+        self.section = section
+
+    def sanitise(self, name):
+        temp = []
+        name = name.replace(' ', '_')
+
+        for c in name:
+            if c in Attachment.ALLOWED_CHARS:
+                temp.append(c)
+
+        return ''.join(temp)
+
+    @property
+    def filename(self):
+        """
+        Sanitise the title and turn it into a full blown (relative) filename.
+        """
+        path = []
+        
+        current_section = self.section
+        while True:
+            if current_section.parent_section is None:
+                path.append(current_section.unit.name)
+                break
+
+            path.append(current_section.title)
+            current_section = current_section.parent_section
+
+        full_path = self.sanitise(self.title)
+        for folder in reversed(path):
+            full_path = os.path.join(self.sanitise(folder), full_path)
+
+        return str(full_path)
+
+    def __repr__(self):
+        return '<Attachment: title="{}">'.format(self.title)
 
 
 class Section:
-    def __init__(self, unit, title, url):
+    def __init__(self, unit, title, url, parent_section=None):
         self.unit = unit
         self.title = title
         self.url = url
+        self.parent_section = parent_section
 
     def __repr__(self):
         return '<Section: {}>'.format(self.title)
@@ -68,7 +113,7 @@ class Browser:
             'Help for Students',
             ]
 
-    def __init__(self, username, password, blackboard_url=None):
+    def __init__(self, username, password, blackboard_url=None, threads=8):
         logger.info('Initiating')
 
         self.blackboard_url = blackboard_url or 'https://lms.curtin.edu.au/'
@@ -79,7 +124,7 @@ class Browser:
         self.b = requests.session() 
         self.units = []
 
-        self.thread_pool = ThreadPoolExecutor(max_workers=10)
+        self.thread_pool = ThreadPoolExecutor(max_workers=threads)
         self.futures = []
 
     def login(self):
@@ -155,20 +200,54 @@ class Browser:
         r = self.b.get(section.url)
         soup = BeautifulSoup(r.text, 'html.parser')
 
-        section_files = self._files_in_section(soup)
+        folders = self._folders_in_section(soup, section)
+        logger.debug('{} folders found for this section: {}'.format(len(folders, 
+                                                                  section)))
 
-        for f in section_files:
+        for folder in folders:
+            section.unit.sections.put(f)
+
+        files = self._files_in_section(soup, section)
+        logger.debug('{} files found for this section: {}'.format(len(files, 
+                                                                  section)))
+
+        for f in files:
             section.unit.documents.put(f)
             
         # Find any folders that may be in this one
         items = container.find_all(class_='item')
 
-    def _files_in_section(self, soup):
+        # Call task_done() to notify the queue that a section has finished
+        # Being scraped
+        self.sections.task_done()
+
+    def _folders_in_section(self, soup, section):
+        # This is a really dodgy way to do it. Not really any other option
+        # Though because Blackboard's html isn't easy to work with
+        magic_folder_link_contains = '/webapps/blackboard/content/listContent.jsp?' 
+
+        found_sections = []
+        for link in soup.find_all('a'):
+            if magic_folder_link_contains in link['href']:
+                unit = section.unit
+                title = link.text.strip()
+                url = urljoin(self.blackboard_url, link['href'])
+
+                new_section = Section(unit, title, url, parent_section=section)
+                logger.debug('Nested folder discovered: {}'.format(new_section))
+
+                found_sections.append(new_section)
+
+        return found_sections
+
+
+    def _files_in_section(self, soup, section):
         container = soup.find(id='containerdiv')
 
         files = container.find_all(alt='File')
 
         # Check if there are any documents in this folder
+        # (All attached files are in a list with the "attachments" class
         attached_files = container.find_all(class_='attachments')
 
         file_list = []
@@ -178,22 +257,28 @@ class Browser:
             for attachment in attachments:
                 url = urljoin(self.blackboard_url, attachment['href'])
                 title = attachment.text.strip()
-                new_attachment = Attachment(title, url)
+                new_attachment = Attachment(title, url, section)
 
-                logger.debug('File discovered: {}'.format(title))
+                logger.debug('File discovered: {}'.format(new_attachment))
+                print(new_attachment.filename)
+
                 file_list.append(new_attachment)
 
         return file_list
-
 
     def find_documents(self, unit):
         # Get the initial folders to check
         self._scrape_unit(unit)
 
         while not unit.sections.empty():
-            section = unit.sections.get()
+            try:
+                # use get_nowait() to guard against any race conditions
+                section = unit.sections.get_nowait()
+            except QueueEmpty:
+                pass
 
-            # Tell the thread pool to scrape that section
+            # Tell the thread pool to scrape that section then add the
+            # Future to a list (should be threadsafe because of GIL)
             fut = self.thread_pool.submit(self._scrape_section, section)
             self.futures.append(fut)
 
@@ -207,7 +292,7 @@ class Browser:
 
         wait(self.futures)
 
-
     def quit(self):
+        self.thread_pool.shutdown()
         sys.exit(1)
 

@@ -5,7 +5,7 @@ def main():
     username = '17052933'
     password = 'Popcorn37'
 
-    bob = spider_board.Browser(username, password)
+    bob = spider_board.Browser(username, password, threads=1)
     bob.start()
 
     # bob.login()
