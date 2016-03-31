@@ -5,11 +5,12 @@ import spider_board
 
 
 def main(argv):
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Download all your units '
+    'from blackboard')
     parser.add_argument('username', help='Your username')
     parser.add_argument('password', help='Your password')
     parser.add_argument('-s', '--sequential', dest='sequential', 
-            action='store_true', help='Run sequentially')
+            action='store_true', help='Run sequentially (off by default)')
     parser.add_argument('-t', '--threads', dest='threads', type=int, default=20,
             help='Number of threads to use (default: 20)')
     parser.add_argument('-d', '--destination', dest='destination',
