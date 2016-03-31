@@ -31,18 +31,40 @@ logger.setLevel(logging.DEBUG)
 
 Section = namedtuple('Section', ['unit_code', 'title', 'url'])
 
+class Section:
+    def __init__(self, unit_code, title, url):
+        self.unit_code = unit_code
+        self.title = title
+        self.url = url
+        self.scraped = False
+
+    def __repr__(self):
+        return '<Section: {}>'.format(self.title)
 
 class Unit:
-    def __init__(self, name, url):
+    def __init__(self, name, url, code):
+        self.code = code
         self.url = url.strip()
         self.name = name
-        self.sections = []
+        self.folders = []
+        self.documents = []
 
     def __repr__(self):
         return '<Unit: name="{}">'.format(self.name)
         
 
 class Browser:
+    SKIP_FOLDERS = [
+            'Discussion Board',
+            'Contacts',
+            'Tools',
+            'iPortfolio',
+            'Communication',
+            'Announcements',
+            'My Grades',
+            'Help for Students',
+            ]
+
     def __init__(self, username, password, blackboard_url=None):
         logger.info('Initiating')
 
@@ -80,8 +102,11 @@ class Browser:
 
         course_links = []
         for link in soup.find_all('a'):
+            # Because Blackboard is shit, you need to do a hack in order to
+            # find all unit names
             href = link.get('href')
             course = re.search(r'\?type=Course&id=_(.*)_1&url', href)
+
             if course is None:
                 continue
             else:
@@ -89,13 +114,29 @@ class Browser:
                 code = course.group(1)
                 l = urljoin(self.blackboard_url, href.strip()) 
 
-                new_unit = Unit(name=name, url=l)
+                new_unit = Unit(name=name, url=l, code=code)
                 logger.debug('Unit found: {}'.format(new_unit))
 
                 self.units.append(new_unit)
 
     def _scrape_unit(self, unit):
-        pass
+        logger.info('Scraping all documents for unit: {}'.format(unit))
+        
+        r = self.b.get(unit.url)
+        soup = BeautifulSoup(r.text, 'html.parser')
+
+        sidebar = soup.find(id='courseMenuPalette_contents')
+        links = sidebar.find_all('a')
+
+        for link in links:
+            title = link.span['title']
+            
+            if title in Browser.SKIP_FOLDERS:
+                continue
+
+            new_section = Section(unit.code, title, link['href'])
+            logger.debug('Adding section: {}'.format(new_section))
+            unit.folders.append(new_section)
 
     def quit(self):
         sys.exit(1)
