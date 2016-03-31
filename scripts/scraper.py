@@ -14,6 +14,8 @@ def main(argv):
             help='Number of threads to use (default: 8)')
     parser.add_argument('-d', '--destination', dest='destination',
             help='Where to output the downloaded files')
+    parser.add_argument('-m', '--max-size', dest='max_size',
+            help='The maximum download size in bytes (default: 10MB)')
 
     args = parser.parse_args(argv)
 
@@ -26,14 +28,19 @@ def main(argv):
         run_sequentially = False
 
     if args.destination:
-        download_dir = args.destination
+        download_dir = os.path.expanduser(args.destination)
     else:
-        download_dir = './downloads'
+        download_dir = os.path.expanduser('~/Downloads/Blackboard/')
+
 
     print('Downloading files to {}'.format(os.path.abspath(download_dir)))
 
-    bob = spider_board.Browser(username, password, download_dir,
-            seq=run_sequentially)
+    bob = spider_board.Browser(
+            username, 
+            password, 
+            download_dir,
+            seq=run_sequentially,
+            max_size=args.max_size or 10*1024*1024)
 
     bob.start()
     
