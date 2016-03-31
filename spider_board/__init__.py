@@ -69,7 +69,7 @@ class Attachment:
             current_section = current_section.parent_section
 
         full_path = self.sanitise(self.title)
-        for folder in reversed(path):
+        for folder in path:
             full_path = os.path.join(self.sanitise(folder), full_path)
 
         return str(full_path)
@@ -111,8 +111,8 @@ class Browser:
             'Help for Students',
             ]
 
-    def __init__(self, username, password, blackboard_url=None, threads=8, 
-            seq=False):
+    def __init__(self, username, password, download_dir, blackboard_url=None, 
+            threads=8, seq=False):
         logger.info('Initiating')
 
         self.blackboard_url = blackboard_url or 'https://lms.curtin.edu.au/'
@@ -120,7 +120,9 @@ class Browser:
 
         self.username = username
         self.password = base64.b64encode(password.encode('utf-8')) 
-        self.b = requests.session() 
+        self.download_dir = os.path.abspath(download_dir)
+
+        self.session = self.b = requests.session() 
         self.units = []
 
         # The two "task" queues
@@ -281,6 +283,33 @@ class Browser:
         while not self.sections.empty():
             next_section = self.sections.get()
             self._scrape_section(next_section)
+
+        logger.info('{} files found'.format(self.documents.qsize()))
+
+    def _download(self, document):
+        logger.info('Downloading {}'.format(document.title))
+
+        save_location = os.path.join(self.download_dir, document.filename)
+        parent_dir = os.path.dirname(save_location)
+        
+        # make the document's parent directories
+        os.makedirs(parent_dir, exist_ok=True)
+
+        with open(save_location, 'wb') as fp:
+            r = self.b.get(document.url)
+            fp.write(r.content)
+
+    def download_files(self):
+        logger.info('Now downloading files')
+        
+        while not self.documents.empty():
+            try:
+                next_document = self.documents.get()
+                self._download(next_document)
+            except KeyboardInterrupt:
+                logger.info('Execution halted by user')
+                logger.info('Last file to be downloaded: {}'.format(next_document))
+                break
 
     def start_concurrent(self):
         self.login()
