@@ -320,6 +320,14 @@ class Browser:
 
         # Start streaming the file and saving chunks to disk
         r = self.b.get(document.url, stream=True)
+
+        if not r.ok:
+            logger.error('Request Failed!')
+            logger.error('URL: {}'.format(document.url))
+            logger.error('Status code: {}'.format(r.status_code))
+            logger.error(r.text)
+            return
+
         with open(save_location, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024): 
                 if chunk: # filter out keep-alive new chunks
@@ -344,10 +352,9 @@ class Browser:
                 logger.info('Execution halted by user')
                 logger.info('Last file to be downloaded: {}'.format(next_document))
                 logger.info('Save location: {}'.format(next_document.filename))
-                logging.info('{} bytes downloaded'.format(sum(self.download_sizes)))
                 break
 
-        logging.info('{} bytes downloaded'.format(sum(self.download_sizes)))
+        logger.info('{} bytes downloaded'.format(sum(self.download_sizes)))
 
     def start_concurrent(self):
         self.login()
