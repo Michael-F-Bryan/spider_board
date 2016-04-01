@@ -8,7 +8,8 @@ import sys
 # Constants
 # =========
 
-LOG_FILE = os.path.abspath('scraper_log.log')
+project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOG_FILE = os.path.join(project_dir, 'scraper_log.log')
 FILESIZE_SUFFIX = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
 # Functions

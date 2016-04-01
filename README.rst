@@ -44,7 +44,7 @@ new issue <https://github.com/Michael-F-Bryan/spider_board/issues/new>`_.
 Some useful options:
 
 -v | --verbose
-    Enable verbose output (so you can see what's going on)
+    Enable verbose output 
 -d | --destination
     Where to save the downloaded files (defaults to
     $HOME/Downloads/Blackboard/)
@@ -53,6 +53,9 @@ Some useful options:
     default)
 -m | --max-size
     The maximum download size in megabytes
+
+Spider_board also writes extremely verbose output to a log file in the project
+directory.
 
 To Do
 -----

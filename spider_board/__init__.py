@@ -453,10 +453,13 @@ class Browser:
             self.thread_pool = ThreadPoolExecutor(max_workers=self.threads)
             self.futures = []
 
-            self.spider_concurrent()
-            self.download_concurrent()
-
-            wait(self.futures)
+            try:
+                self.spider_concurrent()
+                self.download_concurrent()
+                wait(self.futures)
+            except KeyboardInterrupt:
+                logger.info('Execution halted by user')
+                self.thread_pool.shutdown()
 
         bytes_downloaded = sum(self.download_sizes)
         logger.info('{} bytes downloaded'.format(humansize(bytes_downloaded)))
