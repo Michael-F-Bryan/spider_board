@@ -4,6 +4,7 @@ from tkinter.messagebox import showwarning, showerror, showinfo
 from tkinter import ttk
 import logging
 import sys
+from threading import Thread
 
 from spider_board.client import Browser
 from spider_board.utils import time_job, LOG_FILE, get_logger, humansize
@@ -13,7 +14,7 @@ from spider_board.utils import time_job, LOG_FILE, get_logger, humansize
 logger = get_logger(__name__, LOG_FILE)
 
 stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
+stream_handler.setLevel(logging.DEBUG)
 logger.addHandler(stream_handler)
 
 
@@ -61,7 +62,8 @@ class Gui:
         self.main_frame.rowconfigure(3, weight=1)
 
         # Make the listbox (and scrollbar) for selecting units
-        self.unit_box = tk.Listbox(self.main_frame, relief=tk.SUNKEN)
+        self.unit_box = tk.Listbox(self.main_frame, relief=tk.SUNKEN, 
+                selectmode=tk.EXTENDED)
         self.unit_box.grid(row=0, column=0, 
                 rowspan=5, columnspan=2, 
                 sticky='nsew')
@@ -94,14 +96,23 @@ class Gui:
             logger.info('Attempting login')
             self.browser = Browser(username, password, savefile)
             self.bootstrap_browser(self.browser)
-            self.browser.login()
+
+            # Do the login in a different thread
+            Thread(target=self.browser.login).start()
         else:
             showwarning('Ok', 'Please fill in all necessary fields.')
             logger.warn("Required fields haven't been filled in")
 
 
     def start_downloading(self):
-        pass
+        logger.info('Download button pressed')
+
+        if self.browser and self.browser.is_logged_in:
+            self.browser.spider_concurrent()
+            self.browser.download_concurrent()
+        else:
+            logger.info('Not logged in')
+            showerror('Ok', 'Not logged in')
 
     def ask_find_directory(self):
         save_location = askdirectory()
@@ -113,6 +124,13 @@ class Gui:
     def quit(self):
         self.root.destroy()
 
+    def update_units(self):
+        self.unit_box.delete(0, tk.END)
+        for unit in self.browser.units:
+            self.unit_box.insert(tk.END, unit.title)
+
+        self.root.after(1000, self.update_units)
+
     def bootstrap_browser(self, browser):
         """
         Add in any hooks to the browser so they will be run on certain events.
@@ -122,22 +140,24 @@ class Gui:
             gui.quit()
 
         def on_login_successful(browser_instance, gui):
-            """Fire off an info dialog"""
-            showinfo('Ok', 'Login Successful')
+            """Fire off an info dialog and get units (in another thread)"""
+            # Thread(target=browser_instance.get_units).start()
+            gui.root.after(0, showinfo, 'Ok', 'Login Successful')
 
         def on_login_failed(browser_instance, gui):
             """Fire off an error dialog"""
             showerror('Ok', 'Login Unsuccessful')
 
+
+        def on_get_units(browser_instance, gui):
+            gui.root.after(0, gui.update_units)
+
+        hooks = [on_quit, on_login_successful, on_login_failed,
+                on_get_units]
+
         # Do the actual bootstrapping
-        browser.on_quit = (lambda browser_instance: 
-                on_quit(browser_instance, self))
-        browser.on_login_successful = (lambda browser_instance: 
-                on_login_successful(browser_instance, self))
-        browser.on_login_failed = (lambda browser_instance: 
-                on_login_failed(browser_instance, self))
+        for hook in hooks:
+            callback = lambda browser_instance: hook(browser_instance, self)
+            setattr(browser, hook.__name__, callback)
 
-
-if __name__ == "__main__":
-    g = Gui()
-    g.mainloop()
+        browser.on_login_failed(self)

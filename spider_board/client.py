@@ -117,6 +117,7 @@ class Browser:
         self.password = base64.b64encode(password.encode('utf-8')) 
         self.download_dir = os.path.abspath(download_dir)
         self.force = force
+        self.is_logged_in = False
 
         if max_size > 0:
             self.max_size = max_size*1024*1024 # Maximum download size in bytes
@@ -149,7 +150,8 @@ class Browser:
 
         if 'You are being redirected to another page' in r.text:
             logger.info('Login was successful')
-            self.run_hook('on_login_success')
+            self.is_logged_in = True
+            self.run_hook('on_login_successful')
         else:
             logger.error('Login failed')
             self.run_hook('on_login_failed')
@@ -178,6 +180,8 @@ class Browser:
                 logger.debug('Unit found: {}'.format(new_unit))
 
                 self.units.append(new_unit)
+
+        self.run_hook('on_get_units')
 
     def _scrape_unit(self, unit):
         logger.info('Scraping all documents for unit: {}'.format(unit))
@@ -388,7 +392,7 @@ class Browser:
                 self.futures.append(fut)
 
         # Wait so that we have some sections in the queue initially
-        wait(self.futures)
+        wait(self.futures, return_when=FIRST_COMPLETED)
 
         while not self.sections.empty():
             section = self.sections.get()
@@ -416,7 +420,6 @@ class Browser:
             fut.add_done_callback(callback)
 
             self.futures.append(fut)
-
 
     def _requeue(self, func, fut):
         """
@@ -466,6 +469,7 @@ class Browser:
                 logger.info('Execution halted by user')
                 self.thread_pool.shutdown()
 
+        self.run_hook('on_finish_downloads')
         bytes_downloaded = sum(self.download_sizes)
         logger.info('{} bytes downloaded'.format(humansize(bytes_downloaded)))
 
