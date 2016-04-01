@@ -15,7 +15,7 @@ def main(argv=None):
             help='Number of threads to use (default: 20)')
     parser.add_argument('-d', '--destination', dest='destination',
             help='Where to output the downloaded files')
-    parser.add_argument('-m', '--max-size', dest='max_size',
+    parser.add_argument('-m', '--max-size', dest='max_size', type=int,
             help='The maximum download size in megabytes (default: 10MB)')
     parser.add_argument('-f', '--force', dest='force', action='store_true',
             help='Overwrite files if they already exist (default: False)')
@@ -51,7 +51,7 @@ def main(argv=None):
             max_size=args.max_size or 10,
             force=args.force)
 
-    bob.start()
+    bob.start_scraping()
 
 
 if __name__ == "__main__":

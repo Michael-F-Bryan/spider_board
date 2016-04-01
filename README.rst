@@ -22,9 +22,16 @@ To install this application, you need to clone the repository::
 
     git clone https://github.com/Michael-F-Bryan/spider_board.git
 
+(Optional) Make a virtual environment to keep your python packages nice and
+tidy using `virtualenvwrapper
+<https://virtualenvwrapper.readthedocs.org/en/latest/>`_::
+    
+    mkvirtualenv spider
+
 Then run the setup script (may need admin privileges)::
     
     python3 setup.py install
+
 
 Then finally run the application::
 

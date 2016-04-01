@@ -116,8 +116,12 @@ class Browser:
         self.username = username
         self.password = base64.b64encode(password.encode('utf-8')) 
         self.download_dir = os.path.abspath(download_dir)
-        self.max_size = max_size*1024*1024 # Maximum download size in bytes
         self.force = force
+
+        if max_size > 0:
+            self.max_size = max_size*1024*1024 # Maximum download size in bytes
+        else:
+            self.max_size = 2*1024**3  # 2GB should be big enough...
 
         self.session = self.b = requests.session() 
         self.units = []
@@ -445,7 +449,7 @@ class Browser:
             self.futures.append(new_future)
 
     @time_job()
-    def start(self):
+    def start_scraping(self):
         if self.sequential:
             self.spider_sequential()
             self.download_files_sequential()
