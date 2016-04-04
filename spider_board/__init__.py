@@ -236,9 +236,9 @@ class Browser:
         content = soup.find(id='content')
 
         if content is None:
-            print(section.url)
-            import pdb
-            pdb.set_trace()
+            # Must be an empty folder
+            # print(section.url)
+            return []
 
         found_sections = []
         for link in content.find_all('a'):
@@ -288,8 +288,6 @@ class Browser:
         logger.info('{} files found'.format(self.documents.qsize()))
 
     def _download(self, document):
-        logger.info('Downloading "{}"'.format(document.title))
-
         save_location = os.path.join(self.download_dir, document.filename)
         parent_dir = os.path.dirname(save_location)
 
@@ -338,6 +336,9 @@ class Browser:
             logger.warn('Proposed save location: {}'.format(save_location))
             return
 
+        logger.info('Downloading "{}" ({})'.format(document.title, 
+            humansize(file_size)))
+
         with open(save_location, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024): 
                 if chunk: # filter out keep-alive new chunks
@@ -382,6 +383,7 @@ class Browser:
 
         # Do the initial scrapes for each unit
         for unit in self.units:
+            # if '[' not in unit.name:
             if '[' not in unit.name:
                 fut = self.thread_pool.submit(self._scrape_unit, unit)
                 self.futures.append(fut)
